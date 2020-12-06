@@ -1,0 +1,111 @@
+
+//mesh Th = square(nn, nn);
+border C01(t=0, 1){x=t; y=0;};
+border C02(t=0, 1){x=1; y=t;};
+border C03(t=0, 1){x=1-t; y=1;};
+border C04(t=0, 1){x=0; y=1-t;};
+
+
+int n = 30; // Nombre de points par côté
+    
+mesh Th = buildmesh(C01(n)+C02(n)+C03(n)+C04(n));
+
+
+//	***	DEFINE FUNCTION VOL:
+real f1=0.0,f2=0.0;//	***	DEFINE FUNCTION VOL:
+
+
+// Fespace
+fespace Uh(Th, [P1b,P1b]);
+Uh [u, v];
+Uh [uu, vv];
+fespace Uhh(Th,P1b); 
+Uhh ue = x; 
+Uhh ve = -y; 
+
+	
+fespace Ph(Th, P1);
+Ph p, pp, q;
+Ph pe = x+y - int2d(Th)( (x+y)/2.0 );
+
+	
+varf a([u,v],[uu,vv])
+= int2d(Th) (
+		dx(u)*dx(uu)
+        + dy(u)*dy(uu)
+        + dx(v)*dx(vv)
+        + dy(v)*dy(vv)
+		)
+		+on(C01,C03,u=0,v=0) 
+        +on(C04,u=1,v=0);
+
+varf b([u,v],[q])
+= int2d(Th) (- q * (dx(u) + dy(v))); 
+
+varf external([u,v],[uu,vv]) = int2d(Th)(f1 * uu + f2 * vv);
+
+varf massp(p, q)= int2d(Th)(p * q);
+
+real tgv = 1.0e+30;
+matrix A = a(Uh,Uh,solver=UMFPACK, tgv=tgv);
+matrix B = b(Uh, Ph, tgv=tgv);
+matrix Mp = massp(Ph,Ph,solver=UMFPACK,tgv=tgv);
+
+real[int] bc = a(0,Uh);
+real[int] ff = external(0,Uh);
+
+func real[int] UzawaStokes(real[int] &pp)
+	{
+		real[int] b = B'*pp;
+		real[int] uu =A^-1 * b;  
+		pp = B * uu;   
+		pp -= pp.sum / pp.n;
+		return pp;
+	}
+	
+func real[int] PreconMass(real[int] &pp)
+{
+	real[int] ppp = Mp^-1 * pp;
+	pp = ppp;  
+	pp -= pp.sum / pp.n;
+	return pp;
+}
+p = 0.0;
+
+{
+	ff += bc ;
+	real[int] uu = A^-1 * ff ;
+	q[] = B * uu;
+}
+
+LinearCG(UzawaStokes, p[], q[],precon = PreconMass, nbiter=100, eps=1.0e-10, verbosity=100);
+
+{  
+ff = external(0, Uh);
+real[int] b = B'*p[];  
+ff -= b;  
+ff += bc;                
+u[] = A^-1 * ff;        
+}
+
+real meanp = int2d(Th)(p) / Th.area;
+p = p - meanp;
+/*
+real errH1U,errH1P;
+
+    errH1U=sqrt( int2d(Th)( (u-ue)^2+(v-ve)^2)
+             + int2d(Th)( (dx(u)-dx(ue))^2 + (dx(v)-dx(ve))^2 ) 
+             + int2d(Th)( (dy(u)-dy(ue))^2 + (dy(v)-dy(ve))^2 )
+            );
+
+	errH1P=sqrt( int2d(Th)( (p-pe)^2) 
+            + int2d(Th)( (dx(p)-dx(pe))^2 + (dy(p)-dy(pe))^2 )
+            );
+
+*/
+
+plot([u,v],p, wait=1 , ps="solve_30_triangle_poiseille.eps");
+
+
+
+ 
